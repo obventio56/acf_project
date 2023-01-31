@@ -106,6 +106,18 @@ class ACF:
         self.backup[h][b][c] = y
         self.backup[h][b][swap_index] = x
 
+    def occupancy_stats(self):
+        per_table = []
+        for i in range(0, self.d):
+            total = 0
+            full = 0
+            for j in range(0, self.b):
+                for k in range(0, self.c):
+                    total +=1
+                    if self.tables[i][j][k] is not None:
+                        full += 1
+        print(per_table)
+
 
 """ Rudimentary test routine for ACF:
 1. Picks a random int, n
