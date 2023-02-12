@@ -33,31 +33,80 @@ class CuckooFilter():
         return int(fingerprintBytes[(i + 1)*-(self.bexp):len(fingerprintBytes) - ((self.bexp)*(i))], 2)
     """
 
+    def find_insertion_path(self, x, badStates=[][:]):
+        """
+        Push self to queue
+        While items in queue or depth limit:
+            - Calculate block hash
+            - Check if empty
+            - If empty, insert
+            - If not empty, push to queue with current index
+        """
+
+        searchQueue = [[[x, badStates], []]]
+
+        # print(searchQueue)
+
+        for _ in range(0, 1000):
+            if len(searchQueue) < 1:
+                print("1000 iterations")
+                break
+
+            [[n, nbadStates], path] = searchQueue.pop(0)
+            fingerprint = crc_from_eth(n)
+            for i in range(0, self.d):
+                if i in nbadStates:
+                    continue
+
+                # Calculate new path if we inserted into this table
+                h = self.block_hash(fingerprint, i)
+                newPath = path.copy()
+                newPath.append(i)
+
+                # If we found a free space, return the path so we can insert
+                if self.tables[i][h][0] is None:
+                    return newPath
+
+                # Otherwise, push to the queue so we can check the next degree
+                [newX, newBadStates] = self.backup[i][h][0]
+                searchQueue.append([[newX, newBadStates], newPath])
+
+        return False
+
     def block_hash(self, fingerprint, i):
         hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
         return hash2_func(struct.pack("!I", fingerprint + i)) % self.b
 
-    def insert(self, x, badStates=[][:], depth=0):
-        if depth > 935:
+    def insert(self, x, badStates=[][:]):
+
+        insertionPath = self.find_insertion_path(x, badStates.copy())
+
+        if insertionPath is False:
             return False
 
-        fingerprint = crc_from_eth(x)
+        # print(insertionPath)
 
-        # Insert into free space if possible, ignore bad states
-        for j in range(0, self.d):
+        # Setup initial insertion
+        toInsert = [x, badStates.copy()]
 
-            if j in badStates:
-                continue
+        for i in range(0, len(insertionPath)):
+            legTable = insertionPath[i]
+            toInsertFingerprint = crc_from_eth(toInsert[0])
+            h = self.block_hash(toInsertFingerprint, legTable)
 
-            h = self.block_hash(fingerprint, j)
-            for i in range(0, self.c):
-                if self.tables[j][h][i] != None:
-                    continue
-                self.tables[j][h][i] = fingerprint
-                self.backup[j][h][i] = [x, badStates.copy()]
-                return True
+            toInsertTmp = None
+            if self.tables[legTable][h][0] is not None:
+                toInsertTmp = self.backup[legTable][h][0].copy()
 
+            self.tables[legTable][h][0] = toInsertFingerprint
+            self.backup[legTable][h][0] = toInsert.copy()
+
+            toInsert = toInsertTmp
+
+        return True
+        # Do some assertion to make sure if we're done inserting the toInsert is None (aka the last space was empty)
         """
+        
         For next week:
             TODO: make something smarter like optimizing the graph. Implement BFS
 
@@ -73,7 +122,17 @@ class CuckooFilter():
             - Write up
 
         MVP: Benchmarking plus prototype
-        """
+
+
+        Push self to queue
+        While items in queue or depth limit:
+            - Calculate block hash
+            - Check if empty
+            - If empty, insert
+            - If not empty, push to queue with current index
+
+
+        
 
         # Pick random item to cuckoo, excluding bad states
         h = None
@@ -97,6 +156,7 @@ class CuckooFilter():
 
         # Cuckoo x, tracking bad states
         return self.insert(new_insert[0], new_insert[1].copy(), depth=depth + 1)
+        """
 
     """ Search tables for fingerprint and return indices """
 
@@ -127,42 +187,30 @@ class CuckooFilter():
             raise "False positive not in ACF"
 
         (h, b, c) = membershipIndex
-
         [x, xBadStates] = self.backup[h][b][c]
+
+        # Mark current position as bad
         xBadStates.append(h)
 
-        x_fingerprint = crc_from_eth(x)
-
-        # This is no longer random
-        swap_index = None
-        for i in range(0, self.d):
-            if i in xBadStates:
-                continue
-            swap_index = i
-            break
-        if swap_index is None:
-            return False
-
-        # print(xBadStates, swap_index)
-
-        b_index = self.block_hash(x_fingerprint, swap_index)
-
-        # y here is value + bad states
-        y = self.backup[swap_index][b_index][c]
-
-        self.backup[swap_index][b_index][c] = [x, xBadStates.copy()]
-        self.tables[swap_index][b_index][c] = x_fingerprint
+        # Remove from current position
         self.backup[h][b][c] = None
         self.tables[h][b][c] = None
 
-        if y is not None:
-            return self.insert(y[0], y[1].copy())
-
-        return True
+        # Reinsert to try to find new position
+        return self.insert(x, xBadStates.copy())
 
     def printState(self):
         print(self.tables)
         print(self.backup)
+
+    def countOccupancy(self):
+        count = 0
+        for i in range(0, self.d):
+            for j in range(0, self.b):
+                for k in range(0, self.c):
+                    if self.tables[i][j][k] is not None:
+                        count += 1
+        print("Occupancy is: " + str(count))
 
     def occupancy_stats(self):
         per_table = []
@@ -192,9 +240,11 @@ class CuckooFilter():
         return delta
 
 
+
 configurations = [(2, 7, 1), (3, 7, 1), (4, 7, 1),
                   (5, 7, 1), (3, 8, 1), (3, 9, 1), (3, 10, 1)]
 
+#configurations = [(3, 7, 1)]
 
 for configuration in configurations:
     print("Configuration: ", configuration)
@@ -237,3 +287,20 @@ for configuration in configurations:
 
         print(capacity, math.floor(occupancy), len(achievedFalsePositives), np.mean(achievedFalsePositives),
               np.std(achievedFalsePositives))
+"""
+
+testCuckoo = CuckooFilter(3, 7, 1)
+src_lst = []
+
+achievedCapacity = True
+
+for i in range(0, math.floor(200)):
+    x = randomSrc()
+    src_lst.append(x)
+    if not testCuckoo.insert(x):
+        achievedCapacity = False
+        print(i)
+        
+        break
+testCuckoo.countOccupancy()
+"""
