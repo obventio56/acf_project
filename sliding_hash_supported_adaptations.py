@@ -4,6 +4,10 @@ import random
 import crcmod
 import numpy as np
 
+"""
+Generate a random MAC address.
+"""
+
 
 def randomSrc():
     components = []
@@ -12,12 +16,20 @@ def randomSrc():
     return ":".join(components)
 
 
+""" 
+Compute the fingerprint for a given MAC address
+"""
+
+
 def crc_from_eth(src):
     hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
     src_hex = int(src[6:17].replace(":", ""), 16)
     return hash2_func(struct.pack("!I", src_hex)) & 0xffff
 
-# Get hash at index i
+
+"""
+Compute sliding hash fingerprint from big hash at index i.
+"""
 
 
 def get_fingerprint_at_index(x, i, fingerprintLength=8):
@@ -38,16 +50,21 @@ class CuckooFilter():
         self.tables = np.full((d, self.b, self.c), None, dtype=object).tolist()
         self.backup = np.full((d, self.b, self.c), None, dtype=object).tolist()
 
+    """
+    Compute the bucket index for a given fingerprint and table index
+    """
+
     def block_hash(self, fingerprint, i):
         hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
         return hash2_func(struct.pack("!I", fingerprint + i)) % self.b
 
+    """
+    Calculate block hash and insert if space in bucket
+    """
+
     def insert(self, x):
 
-        # print("Inserting: " + x)
-
         h = self.block_hash(crc_from_eth(x), 0)
-        # print("Hash: " + str(h))
         for i in range(0, self.c):
             if self.tables[0][h][i] is None:
                 self.tables[0][h][i] = [0, get_fingerprint_at_index(x, 0)]
@@ -94,7 +111,6 @@ class CuckooFilter():
         [bad_hash_index, _] = self.tables[h][b][c]
         new_hash_index = bad_hash_index + 1
 
-
         if new_hash_index + 8 > 32:
             return False
 
@@ -103,9 +119,17 @@ class CuckooFilter():
 
         return True
 
+    """
+    Print current state of the filter tables.
+    """
+
     def printState(self):
         print(self.tables)
         print(self.backup)
+
+    """
+    Count items in filter. Useful as sanity check.
+    """
 
     def countOccupancy(self):
         count = 0
@@ -115,6 +139,10 @@ class CuckooFilter():
                     if self.tables[i][j][k] is not None:
                         count += 1
         print("Occupancy is: " + str(count))
+
+    """
+    Print the occupancy of each stage in the filter
+    """
 
     def occupancy_stats(self):
         per_table = []
@@ -129,7 +157,9 @@ class CuckooFilter():
             per_table.append((total, full))
         print(per_table)
 
-    """Currently assumes one cell per bucket"""
+    """
+    Get delta between CuckooFilter and tofino register state. Used to update tofino registers.
+    """
 
     def getDelta(self, regState):
         delta = []
@@ -144,14 +174,13 @@ class CuckooFilter():
         return delta
 
 
-# configurations = [(2, 7, 1), (3, 7, 1), (4, 7, 1),
-#                  (5, 7, 1), (3, 8, 1), (3, 9, 1), (3, 10, 1)]
-
 configurations = [(1, 7, 8)]
 
+# For each configuration
 for configuration in configurations:
     print("Configuration: ", configuration)
 
+    # For occupancy between 10% and 99%
     for occupancyRate in range(10, 99):
         achievedFalsePositives = []
         capacity = configuration[0]*pow(2, configuration[1])*configuration[2]
@@ -159,14 +188,18 @@ for configuration in configurations:
 
         print(occupancy, capacity)
 
+        # Run test up to five times
         for _ in range(0, 5):
 
+            # Create new filter
             testCuckoo = CuckooFilter(
                 configuration[0], configuration[1], configuration[2])
+
+            # Track items we insert into the filter
             src_lst = []
 
+            # Insert items until we reach the desired occupancy
             achievedCapacity = True
-
             for _ in range(0, math.floor(occupancy)):
                 x = randomSrc()
                 src_lst.append(x)
@@ -177,6 +210,7 @@ for configuration in configurations:
             if not achievedCapacity:
                 continue
 
+            # Simulate and count supported false positive adaptations
             falsePositives = 0
             while True:
                 x = src_lst[falsePositives % len(src_lst)]
@@ -188,7 +222,7 @@ for configuration in configurations:
                         adapted = False
                         break
 
-                    # Simulate adaptation where 1/2 of the time it still collides
+                    # Simulate adaptation where 1/2 of the time it still collides with the same item (since we adjust only one bit)
                     if random.randint(0, 1) == 0:
                         break
 
@@ -199,25 +233,9 @@ for configuration in configurations:
 
             achievedFalsePositives.append(falsePositives)
 
+        # If we didn't reach the desired occupancy for more than 1/5 of the runs, complete the configuration
         if len(achievedFalsePositives) < 4:
             break
 
         print(capacity, math.floor(occupancy), len(achievedFalsePositives), np.mean(achievedFalsePositives),
               np.std(achievedFalsePositives))
-"""
-
-testCuckoo = CuckooFilter(3, 7, 1)
-src_lst = []
-
-achievedCapacity = True
-
-for i in range(0, math.floor(200)):
-    x = randomSrc()
-    src_lst.append(x)
-    if not testCuckoo.insert(x):
-        achievedCapacity = False
-        print(i)
-        
-        break
-testCuckoo.countOccupancy()
-"""
