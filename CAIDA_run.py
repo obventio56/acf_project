@@ -5,16 +5,21 @@ Run ACF data structure on CAIDA traces
 import argparse
 import pickle
 import threading
+from tqdm import tqdm
 
 from acf_firewall import ACF
 
-def load_trace(fname):
+def load_trace(fname, sample):
     """
     Load dumped trace generated from preprocess.py
     """
     with open(fname, "rb") as f:
         fiveTuple_list = pickle.load(f)
-        return fiveTuple_list
+        if sample:
+            sample_sz = 0.01 * len(fiveTuple_list)
+            return fiveTuple_list[:sample_sz]
+        else:
+            return fiveTuple_list
     raise Exception("Trace not exists")
 
 def get_trace_stats(trace):
@@ -43,7 +48,7 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, res_map, res_map_lock):
     # 95% load when it is filled
     acf = ACF(b=int(S_flows / 0.95), c=4)
     st = set()
-    for fiveTuple in fiveTuple_list:
+    for fiveTuple in tqdm(fiveTuple_list, desc="[Thread {}]".format(tid)):
         # TODO: It seems hash_with_offset requires input to be integer
         # So we convert the fiveTuple back
         fiveTuple = int.from_bytes(fiveTuple, byteorder="little")
@@ -70,9 +75,11 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, res_map, res_map_lock):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run ACF data structure on CAIDA traces")
     parser.add_argument('input_trace', type=str, help="input CAIDA trace file")
+    parser.add_argument('sample', type=bool, help="use sample of the all traces")
+
     args = parser.parse_args()
 
-    fiveTuple_list = load_trace(args.input_trace)
+    fiveTuple_list = load_trace(args.input_trace, args.sample)
     n_flows, n_pkts = get_trace_stats(fiveTuple_list)
 
 
