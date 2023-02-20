@@ -119,30 +119,31 @@ class ACF:
         print(per_table)
 
 
-""" Rudimentary test routine for ACF:
-1. Picks a random int, n
-2. If n is true positive, asserts ACF agrees
-3. If n is false positive, calls ACF adjust and asserts false positive is fixed
-4. If n is true negative, inserts n and checks that it was inserted
-"""
-acf = ACF(100,4)
-insert_list = []
-while True:   
-    print(len(insert_list)) 
-    n = random.randint(0, 900000000)
-    if n in insert_list:
-        assert acf.check_membership(n)
-    else:
-        if acf.check_membership(n):
-            acf.adapt_false_positive(n)
-            assert not acf.check_membership(n)
-        else:
-            res = acf.insert(n)
-            insert_list.append(n)
-            if res:
-                insert_list.remove(res)
-            # Sometimes (rarely) the element that gets cuckooed out (due to depth limit)
-            # is the element we were trying to insert originally. If this is the case, we
-            # don't expect n to be in the acf
-            if res == n: continue
+if __name__ == "__main__":
+    """ Rudimentary test routine for ACF:
+    1. Picks a random int, n
+    2. If n is true positive, asserts ACF agrees
+    3. If n is false positive, calls ACF adjust and asserts false positive is fixed
+    4. If n is true negative, inserts n and checks that it was inserted
+    """
+    acf = ACF(100,4)
+    insert_list = []
+    while True:   
+        print(len(insert_list)) 
+        n = random.randint(0, 900000000)
+        if n in insert_list:
             assert acf.check_membership(n)
+        else:
+            if acf.check_membership(n):
+                acf.adapt_false_positive(n)
+                assert not acf.check_membership(n)
+            else:
+                res = acf.insert(n)
+                insert_list.append(n)
+                if res:
+                    insert_list.remove(res)
+                # Sometimes (rarely) the element that gets cuckooed out (due to depth limit)
+                # is the element we were trying to insert originally. If this is the case, we
+                # don't expect n to be in the acf
+                if res == n: continue
+                assert acf.check_membership(n)
