@@ -44,6 +44,9 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, res_map, res_map_lock):
     acf = ACF(b=int(S_flows / 0.95), c=4)
     st = set()
     for fiveTuple in fiveTuple_list:
+        # TODO: It seems hash_with_offset requires input to be integer
+        # So we convert the fiveTuple back
+        fiveTuple = int.from_bytes(fiveTuple, byteorder="little")
         if len(st) <= S_flows:
             if fiveTuple not in st:
                 acf.insert(fiveTuple)
