@@ -5,9 +5,12 @@ Run ACF data structure on CAIDA traces
 import argparse
 import pickle
 import threading
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from acf_firewall import ACF
+
+SAMPLE_RATIO = 0.1
 
 def load_trace(fname, sample):
     """
@@ -16,7 +19,7 @@ def load_trace(fname, sample):
     with open(fname, "rb") as f:
         fiveTuple_list = pickle.load(f)
         if sample:
-            sample_sz = int(0.01 * len(fiveTuple_list))
+            sample_sz = int(SAMPLE_RATIO * len(fiveTuple_list))
             return fiveTuple_list[:sample_sz]
         else:
             return fiveTuple_list
@@ -93,7 +96,16 @@ if __name__ == "__main__":
     for thread in thread_list:
         thread.join()
 
-    print(res_map)
+    fp_list = []
+    for ratio in ratio_list:
+        fp_list.append(res_map[ratio])
+
+    print(fp_list) 
+    print(ratio_list)
+    fig, ax = plt.subplots()
+    ax.plot(ratio_list, fp_list)
+    ax.set_yscale('log')
+    fig.savefig("res.png")
 
 
     
