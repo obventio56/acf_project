@@ -16,7 +16,7 @@ def load_trace(fname, sample):
     with open(fname, "rb") as f:
         fiveTuple_list = pickle.load(f)
         if sample:
-            sample_sz = 0.01 * len(fiveTuple_list)
+            sample_sz = int(0.01 * len(fiveTuple_list))
             return fiveTuple_list[:sample_sz]
         else:
             return fiveTuple_list
@@ -55,9 +55,7 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, res_map, res_map_lock):
         if len(st) <= S_flows:
             if fiveTuple not in st:
                 acf.insert(fiveTuple)
-            else:
                 st.add(fiveTuple)
-            pass
         else:
             # The remaining are used to 
             # check false positive rate 
