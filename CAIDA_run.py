@@ -11,6 +11,12 @@ from tqdm import tqdm
 from acf_firewall import ACF
 
 
+def add_bool_arg(parser, name, default=False):
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--' + name, dest=name, action='store_true')
+    group.add_argument('--no-' + name, dest=name, action='store_false')
+    parser.set_defaults(**{name:default})
+
 def load_trace(fname, sample, sample_rate):
     """
     Load dumped trace generated from preprocess.py
@@ -50,6 +56,7 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
     # 95% load when it is filled
     acf = ACF(b=int(S_flows / 0.95), c=ACF_c)
     st = set()
+    A_st = set()
     for fiveTuple in tqdm(fiveTuple_list, desc="[Thread {}]".format(tid)):
         # TODO: It seems hash_with_offset requires input to be integer
         # So we convert the fiveTuple back
@@ -59,14 +66,16 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
                 acf.insert(fiveTuple)
                 st.add(fiveTuple)
         else:
-            # The remaining are used to 
-            # check false positive rate 
-            if acf.check_membership(fiveTuple):
-                if fiveTuple not in st:
-                    FP += 1
-            else:
-                if fiveTuple not in st:
-                    TN += 1
+            if fiveTuple not in A_st:
+                A_st.add(fiveTuple)
+                # The remaining are used to 
+                # check false positive rate 
+                if acf.check_membership(fiveTuple):
+                    if fiveTuple not in st:
+                        FP += 1
+                else:
+                    if fiveTuple not in st:
+                        TN += 1
     fp_rate = FP / (FP + TN)
     with res_map_lock:
         res_map[ratio] = fp_rate
@@ -75,7 +84,7 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run ACF data structure on CAIDA traces")
     parser.add_argument('-input_trace', type=str, help="input CAIDA trace file")
-    parser.add_argument('-sample', type=bool, default=False, help="use sample of the all traces")
+    add_bool_arg(parser, "sample")
     parser.add_argument('-sample_rate', type=float, default=0.1, help="the sample rate")
     args = parser.parse_args()
 
