@@ -66,16 +66,16 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
                 acf.insert(fiveTuple)
                 st.add(fiveTuple)
         else:
-            if fiveTuple not in A_st:
-                A_st.add(fiveTuple)
-                # The remaining are used to 
-                # check false positive rate 
-                if acf.check_membership(fiveTuple):
-                    if fiveTuple not in st:
-                        FP += 1
-                else:
-                    if fiveTuple not in st:
-                        TN += 1
+            # The remaining are used to 
+            # check false positive rate 
+            if acf.check_membership(fiveTuple):
+                if fiveTuple not in st:
+                    FP += 1
+                    # Now adaptive
+                    acf.adapt_false_positive(fiveTuple)
+            else:
+                if fiveTuple not in st:
+                    TN += 1
     fp_rate = FP / (FP + TN)
     with res_map_lock:
         res_map[ratio] = fp_rate

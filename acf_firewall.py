@@ -101,7 +101,7 @@ class ACF:
         x = self.backup[h][b][c]
         y = self.backup[h][b][swap_index]
 
-        self.tables[h][b][c] = fingerprint_hash(y, c)
+        self.tables[h][b][c] = fingerprint_hash(y, c) if y != None else None
         self.tables[h][b][swap_index] = fingerprint_hash(x, swap_index)
         self.backup[h][b][c] = y
         self.backup[h][b][swap_index] = x
