@@ -112,7 +112,7 @@ if __name__ == "__main__":
         fp_list = []
         for ratio in ratio_list:
             fp_list.append(res_map[ratio])
-        ax.plot(ratio_list, fp_list, marker_style, fillstyle="none", label="ACF (c={})".format(ACF_c))
+        ax.plot(ratio_list, fp_list, "-{}".format(marker_style), fillstyle="none", label="ACF (c={})".format(ACF_c))
 
     ax.set_xlabel("A/S ratio")
     ax.set_ylabel("False positive rate")
