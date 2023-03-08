@@ -6,7 +6,6 @@ Example 2 (with sampling): python CAIDA_run.py -input_trae trace.dat --sample -s
 """
 
 import argparse
-import pickle
 import threading
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -15,7 +14,7 @@ from util import *
 from acf_firewall import ACF
 
 
-def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock):
+def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, ratio2FP, ratio2FP_lock):
     """
     Calculate false positive rate of ACF
     parameters:
@@ -24,8 +23,8 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
         ratio: A/S ratio
         n_flows: #number of flows in packet trace
         ACF_c: number of cells per bucket in ACF
-        res_map: mapping between A/S ratio and FP rate
-        res_map_lock: lock associated with mapping
+        ratio2FP: mapping between A/S ratio and FP rate
+        ratio2FP_lock: lock associated with mapping
     """
     print("[Thread {}] ratio={} started".format(tid, ratio))
     fp_rate = 0.0
@@ -38,13 +37,11 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
     A_flows = n_flows - S_flows
 
     # Based on ACF paper, ACF reaches the 
-    # 95% load when it is filled
+    # 95% load when it is filled with all S_flows
     acf = ACF(b=int(S_flows / 0.95), c=ACF_c)
     st = set()
     A_st = set()
     for fiveTuple in tqdm(fiveTuple_list, desc="[Thread {}]".format(tid)):
-        # TODO: It seems hash_with_offset requires input to be integer
-        # So we convert the fiveTuple back
         fiveTuple = int.from_bytes(fiveTuple, byteorder="little")
         if len(st) <= S_flows:
             if fiveTuple not in st:
@@ -56,14 +53,16 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock
             if acf.check_membership(fiveTuple):
                 if fiveTuple not in st:
                     FP += 1
-                    # Now adaptive
+                    # Adapt to FP
                     acf.adapt_false_positive(fiveTuple)
             else:
                 if fiveTuple not in st:
                     TN += 1
+    # Calculate FP
     fp_rate = FP / (FP + TN)
-    with res_map_lock:
-        res_map[ratio] = fp_rate
+    # Add this thread result to the shared mapping across threads 
+    with ratio2FP_lock:
+        ratio2FP[ratio] = fp_rate
     print("[Thread {}] ratio={} finished".format(tid, ratio))
 
 if __name__ == "__main__":
@@ -85,11 +84,11 @@ if __name__ == "__main__":
     C_list = [1, 4]
     marker_style_list = ["o", "v"]
     for marker_style, ACF_c in zip(marker_style_list, C_list):
-        res_map_lock = threading.Lock()
-        res_map = dict()
+        ratio2FP_lock = threading.Lock()
+        ratio2FP = dict()
         # Parallel between different ratio
         thread_list = [threading.Thread(target=run_thread, 
-                       args=(tid, fiveTuple_list, ratio, n_flows, ACF_c, res_map, res_map_lock)) \
+                       args=(tid, fiveTuple_list, ratio, n_flows, ACF_c, ratio2FP, ratio2FP_lock)) \
                        for tid, ratio in enumerate(ratio_list)]
         for thread in thread_list:
             thread.start()
@@ -98,7 +97,7 @@ if __name__ == "__main__":
 
         fp_list = []
         for ratio in ratio_list:
-            fp_list.append(res_map[ratio])
+            fp_list.append(ratio2FP[ratio])
         ax.plot(ratio_list, fp_list, "-{}".format(marker_style), fillstyle="none", label="ACF (c={})".format(ACF_c))
 
     ax.set_xlabel("A/S ratio")
