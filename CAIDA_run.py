@@ -1,8 +1,14 @@
 """
 Run ACF data structure on CAIDA traces
 
-Example 1 (without sampling): python CAIDA_run.py -input_trae trace.dat --no-sample
-Example 2 (with sampling): python CAIDA_run.py -input_trae trace.dat --sample -sample_rate 0.1
+Example 1 (without sampling): 
+    python CAIDA_run.py -input_trae trace.dat --no-sample
+Example 2 (with sampling): 
+    python CAIDA_run.py -input_trae trace.dat --sample -sample_rate 0.1
+
+The preprocessed trace can be found  in this folder '/data/ACF' on TIMI server
+- /data/ACF/equinix-chicago.dirA.20140619-130900.dat
+
 """
 
 import argparse
