@@ -12,9 +12,9 @@ Generate a random MAC address.
 
 def randomSrc():
     components = []
-    for _ in range(6):
-        components.append(f'{random.randint(0, 256):0x}')
-    return ":".join(components)
+    for _ in range(30):
+        components.append(str(random.randint(1, 9)))
+    return int("".join(components))
 
 
 """ 
@@ -22,13 +22,18 @@ Compute the fingerprint for a given MAC address
 """
 
 
+"""
+Generate fingerprint from int representing 5-tuple
+"""
+
+
 def crc_from_eth(src):
     hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
-    src_hex = int(src[6:17].replace(":", ""), 16)
-    return hash2_func(struct.pack("!I", src_hex)) & 0xffff
+    # src_hex = int(src[6:17].replace(":", ""), 16)
+    return hash2_func(src.to_bytes(13, "big")) & 0xffff
 
 
-class CuckooFilter():
+class ACF():
     def __init__(self, d, b, c):
         self.c = c
         self.bexp = b
@@ -210,54 +215,59 @@ class CuckooFilter():
 configurations = [(2, 7, 1), (3, 7, 1), (4, 7, 1),
                   (5, 7, 1), (3, 8, 1), (3, 9, 1), (3, 10, 1)]
 
+if __name__ == "__main__":
+    # For each configuration
+    for configuration in configurations:
+        print("Configuration: ", configuration)
 
-# For each configuration
-for configuration in configurations:
-    print("Configuration: ", configuration)
+        # For occupancy between 10% and 99%
+        for occupancyRate in range(10, 99):
+            achievedFalsePositives = []
+            capacity = configuration[0] * \
+                pow(2, configuration[1])*configuration[2]
+            occupancy = occupancyRate * capacity*0.01
 
-    # For occupancy between 10% and 99%
-    for occupancyRate in range(10, 99):
-        achievedFalsePositives = []
-        capacity = configuration[0]*pow(2, configuration[1])*configuration[2]
-        occupancy = occupancyRate * capacity*0.01
+            print(occupancy, capacity)
 
-        print(occupancy, capacity)
+            # Run test up to five times
+            for _ in range(0, 5):
 
-        # Run test up to five times
-        for _ in range(0, 5):
+                # Create new filter
+                testCuckoo = ACF(
+                    configuration[0], configuration[1], configuration[2])
 
-            # Create new filter
-            testCuckoo = CuckooFilter(
-                configuration[0], configuration[1], configuration[2])
+                # Track items we insert into the filter
+                src_lst = []
 
-            # Track items we insert into the filter
-            src_lst = []
+                # Insert items until we reach the desired occupancy
+                achievedCapacity = True
+                for _ in range(0, math.floor(occupancy)):
+                    x = randomSrc()
 
-            # Insert items until we reach the desired occupancy
-            achievedCapacity = True
-            for _ in range(0, math.floor(occupancy)):
-                x = randomSrc()
-                src_lst.append(x)
-                if not testCuckoo.insert(x):
-                    achievedCapacity = False
-                    break
-            if not achievedCapacity:
-                continue
+                    src_lst.append(x)
+                    if not testCuckoo.insert(x):
+                        achievedCapacity = False
+                        break
+                if not achievedCapacity:
+                    continue
 
-            # Simulate and count supported false positive adaptations
-            falsePositives = 0
-            while True:
-                x = src_lst[falsePositives % len(src_lst)]
+                # Simulate and count supported false positive adaptations
+                falsePositives = 0
+                while True:
+                    x = src_lst[falsePositives % len(src_lst)]
 
-                if not testCuckoo.adapt_false_positive(x):
-                    break
-                falsePositives += 1
+                    if not testCuckoo.adapt_false_positive(x):
+                        break
 
-            achievedFalsePositives.append(falsePositives)
+                    assert testCuckoo.check_membership(x) == False
 
-        # If we didn't reach the desired occupancy for more than 1/5 of the runs, complete the configuration
-        if len(achievedFalsePositives) < 4:
-            break
+                    falsePositives += 1
 
-        print(capacity, math.floor(occupancy), len(achievedFalsePositives), np.mean(achievedFalsePositives),
-              np.std(achievedFalsePositives))
+                achievedFalsePositives.append(falsePositives)
+
+            # If we didn't reach the desired occupancy for more than 1/5 of the runs, complete the configuration
+            if len(achievedFalsePositives) < 4:
+                break
+
+            print(capacity, math.floor(occupancy), len(achievedFalsePositives), np.mean(achievedFalsePositives),
+                  np.std(achievedFalsePositives))
