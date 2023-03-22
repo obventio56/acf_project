@@ -20,9 +20,6 @@ from tqdm import tqdm
 from util import *
 from supported_adaptations import ACF
 
-# A/S ratio (Michael's sec4.2 experiment)
-ratio_list = [i for i in range(1, 6)] + [i * 10 for i in range(1, 11)]
-
 
 def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ratio2FP, ratio2FP_lock):
     """
@@ -43,8 +40,8 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
 
     # First, let's calculate the number of flows
     # for set A and set S
-    S_flows = int(n_flows / (1 + max(ratio_list)))
-    A_flows = S_flows*ratio
+    S_flows = int(n_flows / (1 + ratio))
+    A_flows = n_flows - S_flows
 
     print(S_flows, A_flows)
 
@@ -57,41 +54,38 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
     acf = ACF(d=11, b=b_val,
               c=1, fingerprintLength=fingerprintLength)
     st = set()
-    at = set()
     fp_set = set()
 
     insertionFailures = 0
 
+    # A_st = set()
     for fiveTuple in tqdm(fiveTuple_list, desc="[Thread {}]".format(tid)):
         fiveTuple = int.from_bytes(fiveTuple, byteorder="little")
-
-        # Add first S_flows to st
         if len(st) <= S_flows:
             if fiveTuple not in st:
                 if not acf.insert(fiveTuple):
                     insertionFailures += 1
                 st.add(fiveTuple)
-
-        # Add next A_flows to at
-        if len(at) <= A_flows and fiveTuple not in st:
-            at.add(fiveTuple)
-
-        # If a packet is in st or at check membership
-        if (fiveTuple in st or fiveTuple in at) and acf.check_membership(fiveTuple):
-            if fiveTuple not in st:
-
-                if fiveTuple not in fp_set:
-                    fp_set.add(fiveTuple)
-
-                FP += 1
-                # Adapt to FP
-                if adapt == True:
-                    acf.adapt_false_positive(fiveTuple)
-                #assert acf.check_membership(fiveTuple) == False
+            # else:
+                # Sanity check, flow should already be in filter
+                # assert acf.check_membership(fiveTuple)
         else:
-            if fiveTuple not in st:
-                TN += 1
+            # The remaining are used to
+            # check false positive rate
+            if acf.check_membership(fiveTuple):
+                if fiveTuple not in st:
 
+                    if fiveTuple not in fp_set:
+                        fp_set.add(fiveTuple)
+
+                    FP += 1
+                    # Adapt to FP
+                    if adapt == True:
+                        acf.adapt_false_positive(fiveTuple)
+                    #assert acf.check_membership(fiveTuple) == False
+            else:
+                if fiveTuple not in st:
+                    TN += 1
     # Calculate FP
     fp_rate = FP / (FP + TN)
     # print(len(fp_set))
@@ -138,7 +132,7 @@ if __name__ == "__main__":
 
         print(n_flows, n_pkts)
 
-        
+        """
         ratio2FP_lock = threading.Lock()
         ratio2FP = dict()
         run_thread(1, fiveTuple_list, 1, n_flows, True, 0xff, ratio2FP, ratio2FP_lock)
@@ -148,6 +142,10 @@ if __name__ == "__main__":
         """
 
         for fingerprintLength in fingerprint_lengths:
+
+            # A/S ratio (Michael's sec4.2 experiment)
+            ratio_list = [i for i in range(
+                1, 6)] + [i * 10 for i in range(1, 11)]
 
             fig, ax = plt.subplots()
             C_list = [True, False]
@@ -178,4 +176,3 @@ if __name__ == "__main__":
             ax.set_yscale('log')
             ax.legend()
             fig.savefig("res_{}_{}.png".format(fingerprintLength, traceLabel))
-        """

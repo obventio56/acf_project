@@ -267,7 +267,7 @@ if __name__ == "__main__":
         print("Configuration: ", configuration)
 
         # For occupancy between 10% and 99%
-        for occupancyRate in range(10, 99):
+        for occupancyRate in range(50, 99):
             achievedFalsePositives = []
             capacity = configuration[0] * \
                 pow(2, configuration[1])*configuration[2]
