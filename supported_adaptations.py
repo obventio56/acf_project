@@ -27,17 +27,18 @@ Generate fingerprint from int representing 5-tuple
 """
 
 
-def crc_from_eth(src):
+def crc_from_eth(src, fingerprintLength):
     hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
     # src_hex = int(src[6:17].replace(":", ""), 16)
-    return hash2_func(src.to_bytes(13, "big")) & 0xffff
+    return hash2_func(src.to_bytes(13, "little")) & fingerprintLength
 
 
 class ACF():
-    def __init__(self, d, b, c):
+    def __init__(self, d, b, c, fingerprintLength):
+        self.fingerprintLength = fingerprintLength
         self.c = c
         self.bexp = b
-        self.b = pow(2, b)
+        self.b = b
         self.d = d
         self.tables = np.full((d, self.b, self.c), None, dtype=object).tolist()
         self.backup = np.full((d, self.b, self.c), None, dtype=object).tolist()
@@ -46,9 +47,25 @@ class ACF():
     Compute the bucket index for a given fingerprint and table index
     """
 
-    def block_hash(self, fingerprint, i):
+    def block_hash(self, x, i):
         hash2_func = crcmod.predefined.mkCrcFun('crc-32-bzip2')
-        return hash2_func(struct.pack("!I", fingerprint + i)) % self.b
+        srcByteString = x.to_bytes(13, "little")
+        rotatedByteString = srcByteString[i:] + srcByteString[:i]
+
+        if i == 0:
+            assert srcByteString == rotatedByteString
+            assert hash2_func(x.to_bytes(13, "little")) % self.b == hash2_func(rotatedByteString) % self.b
+
+        """
+        if x == 477101476482349837267165074221 or x == 539758783583190476167677316429:
+            print(x)
+            print(i)
+            print(x.to_bytes(13, "little"), rotatedByteString)
+            print(hash2_func(x.to_bytes(13, "little")), hash2_func(rotatedByteString))
+            print(self.b)
+        """
+
+        return hash2_func(rotatedByteString) % self.b
 
     """
     Find an insertion path for x by running BFS. An insertion path represents all the entries that need to 
@@ -65,13 +82,13 @@ class ACF():
                 break
 
             [[n, nbadStates], path] = searchQueue.pop(0)
-            fingerprint = crc_from_eth(n)
+            # fingerprint = crc_from_eth(n, es)
             for i in range(0, self.d):
                 if i in nbadStates:
                     continue
 
                 # Calculate new path if we inserted into this table
-                h = self.block_hash(fingerprint, i)
+                h = self.block_hash(x, i)
                 newPath = path.copy()
                 newPath.append(i)
 
@@ -100,10 +117,18 @@ class ACF():
         # Setup initial insertion
         toInsert = [x, badStates.copy()]
 
+        # print(insertionPath)
+
         for i in range(0, len(insertionPath)):
+
+            if toInsert is None:
+                break
+
+            # print(toInsert)
+
             legTable = insertionPath[i]
-            toInsertFingerprint = crc_from_eth(toInsert[0])
-            h = self.block_hash(toInsertFingerprint, legTable)
+            toInsertFingerprint = crc_from_eth(toInsert[0], self.fingerprintLength)
+            h = self.block_hash(toInsert[0], legTable)
 
             toInsertTmp = None
             if self.tables[legTable][h][0] is not None:
@@ -119,9 +144,9 @@ class ACF():
     """ Search tables for fingerprint and return indices """
 
     def membership_index(self, x):
-        fingerprint = crc_from_eth(x)
+        fingerprint = crc_from_eth(x, self.fingerprintLength)
         for i in range(0, self.d):
-            b = self.block_hash(fingerprint, i)
+            b = self.block_hash(x, i)
             for j in range(0, self.c):
                 if self.tables[i][b][j] == fingerprint:
                     return (i, b, j)
@@ -147,6 +172,18 @@ class ACF():
         (h, b, c) = membershipIndex
         [x, xBadStates] = self.backup[h][b][c]
 
+        """
+        print(x, false_x)
+        print(x.to_bytes(13, "little"), false_x.to_bytes(13, "little"))
+        
+        print(crc_from_eth(x), crc_from_eth(false_x))
+        print(crc_from_eth(x + 2), crc_from_eth(false_x + 2))
+
+        print(self.block_hash(x, 0), self.block_hash(false_x, 0))
+        print(self.block_hash(x, 3), self.block_hash(false_x, 3))
+        print(self.b)
+        """
+
         # Mark current position as bad
         xBadStates.append(h)
 
@@ -155,7 +192,16 @@ class ACF():
         self.tables[h][b][c] = None
 
         # Reinsert to try to find new position
-        return self.insert(x, xBadStates.copy())
+        insertSuccess = self.insert(x, xBadStates.copy())
+
+        # Make sure we've resolve the conflict or retry
+        if not insertSuccess:
+            return insertSuccess
+        
+        if self.check_membership(false_x) == True:
+            return self.adapt_false_positive(false_x)
+        
+        return True
 
     """
     Print current state of the filter tables.
