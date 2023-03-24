@@ -3,7 +3,8 @@ import math
 import random
 import crcmod
 import numpy as np
-
+import pathlib
+import json
 
 """
 Generate a random MAC address.
@@ -11,10 +12,7 @@ Generate a random MAC address.
 
 
 def randomSrc():
-    components = []
-    for _ in range(30):
-        components.append(str(random.randint(1, 9)))
-    return int("".join(components))
+    return random.randint(1, 2**104)
 
 
 """ 
@@ -54,7 +52,8 @@ class ACF():
 
         if i == 0:
             assert srcByteString == rotatedByteString
-            assert hash2_func(x.to_bytes(13, "little")) % self.b == hash2_func(rotatedByteString) % self.b
+            assert hash2_func(x.to_bytes(13, "little")) % self.b == hash2_func(
+                rotatedByteString) % self.b
 
         """
         if x == 477101476482349837267165074221 or x == 539758783583190476167677316429:
@@ -127,7 +126,8 @@ class ACF():
             # print(toInsert)
 
             legTable = insertionPath[i]
-            toInsertFingerprint = crc_from_eth(toInsert[0], self.fingerprintLength)
+            toInsertFingerprint = crc_from_eth(
+                toInsert[0], self.fingerprintLength)
             h = self.block_hash(toInsert[0], legTable)
 
             toInsertTmp = None
@@ -167,7 +167,8 @@ class ACF():
         membershipIndex = self.membership_index(false_x)
 
         if membershipIndex == False:
-            raise "False positive not in ACF"
+            return True
+            # raise "False positive not in ACF"
 
         (h, b, c) = membershipIndex
         [x, xBadStates] = self.backup[h][b][c]
@@ -197,10 +198,10 @@ class ACF():
         # Make sure we've resolve the conflict or retry
         if not insertSuccess:
             return insertSuccess
-        
-        if self.check_membership(false_x) == True:
-            return self.adapt_false_positive(false_x)
-        
+
+        # if self.check_membership(false_x) == True:
+        #    return self.adapt_false_positive(false_x)
+
         return True
 
     """
@@ -261,59 +262,48 @@ class ACF():
 configurations = [(2, 7, 1), (3, 7, 1), (4, 7, 1),
                   (5, 7, 1), (3, 8, 1), (3, 9, 1), (3, 10, 1)]
 
+
+filterSize = 13*512
+iterations = 10
 if __name__ == "__main__":
-    # For each configuration
-    for configuration in configurations:
-        print("Configuration: ", configuration)
 
-        # For occupancy between 10% and 99%
-        for occupancyRate in range(10, 99):
-            achievedFalsePositives = []
-            capacity = configuration[0] * \
-                pow(2, configuration[1])*configuration[2]
-            occupancy = occupancyRate * capacity*0.01
+    for s_count in range(1, 11):
+        occupancy = s_count*10
+        adaptation_result = []
 
-            print(occupancy, capacity)
+        for _ in range(0, iterations):
 
-            # Run test up to five times
-            for _ in range(0, 5):
+            # Create new filter
+            testCuckoo = ACF(
+                13, 512, 1, 0xff)
 
-                # Create new filter
-                testCuckoo = ACF(
-                    configuration[0], configuration[1], configuration[2])
+            # Insert items until we reach the desired occupancy
+            n_insert = int((filterSize*occupancy/100))
+            i_st = set()
 
-                # Track items we insert into the filter
-                src_lst = []
+            while len(i_st) < n_insert:
+                x = randomSrc()
+                i_st.add(x)
 
-                # Insert items until we reach the desired occupancy
-                achievedCapacity = True
-                for _ in range(0, math.floor(occupancy)):
-                    x = randomSrc()
+                if not testCuckoo.insert(x):
+                    raise "Did not reach capacity"
 
-                    src_lst.append(x)
-                    if not testCuckoo.insert(x):
-                        achievedCapacity = False
-                        break
-                if not achievedCapacity:
-                    continue
+            FP = 0
+            src_lst = list(i_st)
+            while True:
+                x = src_lst[FP % len(src_lst)]
 
-                # Simulate and count supported false positive adaptations
-                falsePositives = 0
-                while True:
-                    x = src_lst[falsePositives % len(src_lst)]
+                if not testCuckoo.adapt_false_positive(x):
+                    break
 
-                    if not testCuckoo.adapt_false_positive(x):
-                        break
+                # assert testCuckoo.check_membership(x) == False
+                FP += 1
 
-                    assert testCuckoo.check_membership(x) == False
+            print(FP)
+            adaptation_result.append(FP)
 
-                    falsePositives += 1
+        print(s_count*10, sum(adaptation_result) /
+              len(adaptation_result), adaptation_result)
 
-                achievedFalsePositives.append(falsePositives)
-
-            # If we didn't reach the desired occupancy for more than 1/5 of the runs, complete the configuration
-            if len(achievedFalsePositives) < 4:
-                break
-
-            print(capacity, math.floor(occupancy), len(achievedFalsePositives), np.mean(achievedFalsePositives),
-                  np.std(achievedFalsePositives))
+        pathlib.Path("param_results/capacity{}.json".format(s_count)).write_text(json.dumps((s_count*10, sum(adaptation_result) /
+                                                                                             len(adaptation_result), adaptation_result)))

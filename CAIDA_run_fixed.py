@@ -1,9 +1,9 @@
 """
 Run ACF data structure on CAIDA traces
 
-Example 1 (without sampling):
+Example 1 (without sampling): 
     python CAIDA_run.py -input_trace trace.dat --no-sample
-Example 2 (with sampling):
+Example 2 (with sampling): 
     python CAIDA_run.py -input_trace trace.dat --sample -sample_rate 0.1
 
 The preprocessed trace can be found  in this folder '/data/ACF' on TIMI server
@@ -21,6 +21,11 @@ import json
 
 from util import *
 from supported_adaptations import ACF
+
+
+# A/S ratio (Michael's sec4.2 experiment)
+ratio_list = [i for i in range(1, 6)] + [i * 10 for i in range(1, 11)]
+#ratio_list = [1]
 
 
 def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ratio2FP, ratio2FP_lock):
@@ -42,8 +47,8 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
 
     # First, let's calculate the number of flows
     # for set A and set S
-    S_flows = int(n_flows / (1 + ratio))
-    A_flows = n_flows - S_flows
+    S_flows = int(n_flows / (1 + max(ratio_list)))
+    A_flows = S_flows*ratio
 
     print(S_flows, A_flows)
 
@@ -56,11 +61,11 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
     acf = ACF(d=13, b=b_val,
               c=1, fingerprintLength=fingerprintLength)
     st = set()
+    at = set()
     fp_set = set()
 
     insertionFailures = 0
 
-    # A_st = set()
     for fiveTuple in tqdm(fiveTuple_list, desc="[Thread {}]".format(tid)):
         fiveTuple = int.from_bytes(fiveTuple, byteorder="little")
         if len(st) <= S_flows:
@@ -71,12 +76,14 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
             # else:
                 # Sanity check, flow should already be in filter
                 # assert acf.check_membership(fiveTuple)
-        else:
-            # The remaining are used to
-            # check false positive rate
+
+        if len(at) <= A_flows:
+            if fiveTuple not in st:
+                at.add(fiveTuple)
+
+        if fiveTuple in st or fiveTuple in at:
             if acf.check_membership(fiveTuple):
                 if fiveTuple not in st:
-
                     if fiveTuple not in fp_set:
                         fp_set.add(fiveTuple)
 
@@ -84,18 +91,18 @@ def run_thread(tid, fiveTuple_list, ratio, n_flows, adapt, fingerprintLength, ra
                     # Adapt to FP
                     if adapt == True:
                         acf.adapt_false_positive(fiveTuple)
-                    # assert acf.check_membership(fiveTuple) == False
+                    #assert acf.check_membership(fiveTuple) == False
             else:
                 if fiveTuple not in st:
                     TN += 1
     # Calculate FP
     fp_rate = FP / (FP + TN)
     # print(len(fp_set))
-    # print(FP, TN)
+    #print(FP, TN)
 
     # Add this thread result to the shared mapping across threads
     with ratio2FP_lock:
-        ratio2FP[ratio] = fp_rate
+        ratio2FP[ratio] = FP
     print("[Thread {}] ratio={} finished {} {} {} {}".format(
         tid, ratio, adapt, FP, TN, len(fp_set)))
     print(insertionFailures)
@@ -137,18 +144,13 @@ if __name__ == "__main__":
         """
         ratio2FP_lock = threading.Lock()
         ratio2FP = dict()
-        run_thread(1, fiveTuple_list, 1, n_flows,
-                   True, 0xff, ratio2FP, ratio2FP_lock)
+        run_thread(1, fiveTuple_list, 30, n_flows, True, 0xff, ratio2FP, ratio2FP_lock)
 
         print(ratio2FP)
 
         """
 
         for fingerprintLength in fingerprint_lengths:
-
-            # A/S ratio (Michael's sec4.2 experiment)
-            ratio_list = [i for i in range(
-                1, 6)] + [i * 10 for i in range(1, 11)]
 
             fig, ax = plt.subplots()
             C_list = [True, False]
@@ -173,12 +175,12 @@ if __name__ == "__main__":
                         fillstyle="none", label=label_style)
 
                 print(ratio_list, fp_list)
-                pathlib.Path("data/res_{}_{}_{}.txt".format(fingerprintLength,
-                             traceLabel, label_style)).write_text(json.dumps((ratio_list, fp_list)))
 
+                pathlib.Path("data/fixed_res_{}_{}_{}.txt".format(fingerprintLength,
+                             traceLabel, label_style)).write_text(json.dumps((ratio_list, fp_list)))
             ax.set_xlabel("A/S ratio")
-            ax.set_ylabel("False positive rate")
-            ax.set_yscale('log')
-            ax.set_ylim((10**(-3), 10**(-1)))
+            ax.set_ylabel("# False positives")
+            # ax.set_yscale('log')
             ax.legend()
-            fig.savefig("res_{}_{}.png".format(fingerprintLength, traceLabel))
+            fig.savefig("fixed_res_{}_{}.png".format(
+                fingerprintLength, traceLabel))
