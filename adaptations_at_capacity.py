@@ -267,7 +267,7 @@ filterSize = 13*512
 iterations = 10
 if __name__ == "__main__":
 
-    for s_count in range(1, 11):
+    for s_count in range(8, 9):
         occupancy = s_count*10
         adaptation_result = []
 
@@ -281,12 +281,17 @@ if __name__ == "__main__":
             n_insert = int((filterSize*occupancy/100))
             i_st = set()
 
+            reachedCapacity = True
             while len(i_st) < n_insert:
                 x = randomSrc()
                 i_st.add(x)
 
                 if not testCuckoo.insert(x):
-                    raise "Did not reach capacity"
+                    reachedCapacity = False
+                    print("Did not reach capacity")
+
+            if not reachedCapacity:
+                break
 
             FP = 0
             src_lst = list(i_st)
